@@ -86,3 +86,4 @@ The tool generates **two versions** of the map in `generated/maps/`.
 
 *   **"ModuleNotFoundError"**: Run `pip install -r requirements.txt`.
 *   **QGIS Path Errors**: Ensure you are running the script from a saved file, or manually update the `PROJECT_ROOT` variable in the Python script if running directly from the console buffer.
+
