@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Project specific
+generated/
+StylisedMaps/
+MapGenerator-main/
+
+# VS Code
+.vscode/
