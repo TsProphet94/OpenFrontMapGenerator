@@ -4,11 +4,25 @@ A complete workflow for generating stylised, game-ready terrain maps from real-w
 
 ## Features
 
-*   **Topographic Data Collection**: Automatically downloads high-resolution elevation (DEM) data for any selected region.
-*   **Stylised Rendering**: Generates game-ready PNG maps using a custom palette (`OpenFront_Palette.qml`) to match specific game aesthetics.
-*   **Nation & Region Data**: Fetches administrative boundaries to identify nations and regions within the selected area.
-*   **Coordinate Mapping**: Calculates precise coordinates for provinces and nations.
-*   **Flag Assignment**: Automatically assigns appropriate flags to nations based on the downloaded data.
+### 1. Automated Data Extraction (QGIS)
+*   **DEM Download**: Connects to OpenTopography API to fetch high-resolution Global Digital Elevation Models (Copernicus GLO-90) for any user-defined extent.
+*   **Smart Mosaicing**: Automatically handles large areas by downloading multiple tiles and merging them seamlessly.
+*   **Hydrology Overlay**: Integrates Natural Earth river and lake data to ensure accurate water features.
+*   **Province Generation**: Identifies major administrative boundaries (provinces/states) within the map area and calculates their visual centers for game logic.
+
+### 2. Stylised Rendering
+*   **Custom Palette**: Applies a specific color ramp (`OpenFront_Palette.qml`) that maps elevation values to game-compatible terrain colors (e.g., deep water, coastal plains, highlands, mountains).
+*   **Dynamic Height Scaling**: Automatically adjusts the elevation color ramp based on the local maximum height of the selected area. This ensures that relatively flat regions (like the Netherlands or Florida) still exhibit rich topographical detail by stretching the full color palette across the available elevation range, rather than appearing uniformly flat.
+*   **Water Processing**: Distinguishes between oceans, lakes, and rivers using specific color codes (Blue channel values) for the game engine to interpret.
+
+### 3. Game Asset Generation (Python)
+*   **Binary Map Conversion**: Converts the visual PNG map into optimized binary files (`.bin`) containing packed terrain data (type, magnitude, shorelines).
+*   **Multi-Scale LODs**: Automatically generates Level of Detail (LOD) maps:
+    *   **1:1 Scale**: Full resolution for detailed gameplay.
+    *   **1:2 & 1:4 Scales**: Downsampled versions for minimaps and strategic views.
+*   **Cleanup Algorithms**: Includes algorithms to remove noise, such as tiny islands (< 30 pixels) and small lakes (< 200 pixels), ensuring a clean playable area.
+*   **Manifest Creation**: Compiles all map metadata, including province coordinates, spawn points, and map dimensions, into a JSON manifest.
+*   **Flag Assignment**: Automatically matches province/nation names from the source data to a library of SVG flags, assigning them to the generated nations.
 
 ## Project Structure
 
