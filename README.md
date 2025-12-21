@@ -2,6 +2,14 @@
 
 A complete workflow for generating stylised, game-ready terrain maps from real-world data using QGIS and Python.
 
+## Features
+
+*   **Topographic Data Collection**: Automatically downloads high-resolution elevation (DEM) data for any selected region.
+*   **Stylised Rendering**: Generates game-ready PNG maps using a custom palette (`OpenFront_Palette.qml`) to match specific game aesthetics.
+*   **Nation & Region Data**: Fetches administrative boundaries to identify nations and regions within the selected area.
+*   **Coordinate Mapping**: Calculates precise coordinates for provinces and nations.
+*   **Flag Assignment**: Automatically assigns appropriate flags to nations based on the downloaded data.
+
 ## Project Structure
 
 ```
