@@ -27,6 +27,7 @@ from qgis.core import (
     QgsProcessingParameterExtent, QgsProcessingParameterCrs,
     QgsProcessingParameterNumber, QgsProcessingParameterBoolean,
     QgsProcessingParameterFolderDestination, QgsProcessingParameterString,
+    QgsProcessingParameterEnum,
     QgsProcessingException, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
     QgsProject, QgsRasterLayer, QgsVectorLayer, QgsFeature, QgsGeometry,
     QgsMapSettings, QgsMapRendererParallelJob,
@@ -39,7 +40,7 @@ from qgis import processing  # gdal:merge
 
 # ======================= USER CONSTANTS ==========================
 # Get a free API Key from: https://portal.opentopography.org/myopentopo
-API_KEY = "YOUR_OPENTOPO_API_KEY"
+API_KEY = "dd4e0a24f02cbbadff55e7d1c5171672"
 # Embedded OpenFront Palette (Discrete)
 DEM_COLOR_RAMP = [
     (0.0, "#00006a", "Water ≤ 0 m"),
@@ -233,6 +234,7 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
     P_MIN_LAKE_AREA_PX2 = "MIN_LAKE_AREA_PX2"
     P_MAP_NAME = "MAP_NAME"
     P_DYNAMIC_SCALE = "DYNAMIC_SCALE"
+    P_DEM_SOURCE = "DEM_SOURCE"
 
     def name(self): return "map_exporter_dem_majorwaters_provincepixels_safe"
     def displayName(self): return "Map Exporter – DEM + Major Rivers/Lakes & Province Centers (pixels)"
@@ -256,11 +258,16 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
             self.P_DPI, "PNG DPI", QgsProcessingParameterNumber.Integer,
             defaultValue=300, minValue=72, maxValue=1200
         ))
+        self.addParameter(QgsProcessingParameterEnum(
+            self.P_DEM_SOURCE, "DEM Source",
+            options=["Auto (Adaptive)", "COP30 (High Res)", "COP90 (Medium Res)", "SRTM15+ (Low Res)"],
+            defaultValue=0
+        ))
         self.addParameter(QgsProcessingParameterBoolean(self.P_DYNAMIC_SCALE, "Dynamic elevation scaling (fit palette to local max height)", defaultValue=True))
         self.addParameter(QgsProcessingParameterBoolean(self.P_TRANSPARENT, "Transparent background", defaultValue=True))
         self.addParameter(QgsProcessingParameterNumber(
             self.P_RIVER_WIDTH, "River stroke width (px)", QgsProcessingParameterNumber.Double,
-            defaultValue=1.6, minValue=0.1, maxValue=20.0
+            defaultValue=2.0, minValue=0.1, maxValue=20.0
         ))
         self.addParameter(QgsProcessingParameterBoolean(self.P_AUTO_RIVER_SCALE, "Auto-scale river width by image width", defaultValue=True))
         self.addParameter(QgsProcessingParameterFolderDestination(self.P_CACHE, "Cache folder"))
@@ -341,11 +348,35 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
             river_width_eff = river_width
         feedback.pushInfo(f"River stroke width (effective): {river_width_eff:.2f} px")
 
-        # ---------------- 1) DEM (OpenTopography COP90) with auto-tiling ----------------
-        # Reduced tile size to prevent timeouts on large areas (e.g. USA)
-        TILE_MAX_KM2 = 500_000.0
+        # ---------------- 1) DEM (OpenTopography) with auto-tiling ----------------
+        dem_source_idx = self.parameterAsEnum(params, self.P_DEM_SOURCE, context)
         area_km2 = _bbox_area_km2(south, west, north, east)
-        feedback.pushInfo(f"DEM request area ≈ {area_km2:,.0f} km²")
+        
+        # Determine DEM type and tile size limit
+        dem_type = "COP90"
+        tile_max_km2 = 500_000.0
+        
+        if dem_source_idx == 1: # COP30
+            dem_type = "COP30"
+            tile_max_km2 = 50_000.0
+        elif dem_source_idx == 2: # COP90
+            dem_type = "COP90"
+            tile_max_km2 = 500_000.0
+        elif dem_source_idx == 3: # SRTM15+
+            dem_type = "SRTM15Plus"
+            tile_max_km2 = 10_000_000.0
+        else: # Auto
+            if area_km2 < 25000:
+                dem_type = "COP30"
+                tile_max_km2 = 50_000.0
+            elif area_km2 < 2000000:
+                dem_type = "COP90"
+                tile_max_km2 = 500_000.0
+            else:
+                dem_type = "SRTM15Plus"
+                tile_max_km2 = 10_000_000.0
+        
+        feedback.pushInfo(f"DEM Source: {dem_type} (Area: {area_km2:,.0f} km²)")
 
         # Calculate target resolution in degrees for downsampling optimization
         # COP90 is ~0.000833 deg/px. If we need much less, we downsample immediately.
@@ -354,13 +385,13 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
         should_downsample = target_res_deg > 0.002  # Only if > ~2x coarser than native (approx)
 
         def _download_dem_tile(s, w, n, e):
-            qs = dict(demtype="COP90", south=s, north=n, west=w, east=e, outputFormat="GTiff")
+            qs = dict(demtype=dem_type, south=s, north=n, west=w, east=e, outputFormat="GTiff")
             if API_KEY: qs["API_Key"] = API_KEY
             url = "https://portal.opentopography.org/API/globaldem?" + urlencode(qs)
             headers = {"User-Agent": "QGIS Map Exporter Script/1.0"}
             return _save_temp(_download_bytes(url, headers=headers, timeout_ms=240000), ".tif")
 
-        if area_km2 <= TILE_MAX_KM2:
+        if area_km2 <= tile_max_km2:
             feedback.pushInfo("Downloading single DEM tile…")
             dem_path = _download_dem_tile(south, west, north, east)
             # Optional: Downsample single tile if huge? (Usually not needed if area is small)
@@ -371,7 +402,7 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
             km_lat, km_lon = _deg_size_km(0.5*(south+north))
             km2_per_deg2 = km_lat * km_lon
             total_deg2 = max(1e-9, lat_span * lon_span)
-            tiles_needed = max(1, math.ceil((total_deg2 * km2_per_deg2) / TILE_MAX_KM2))
+            tiles_needed = max(1, math.ceil((total_deg2 * km2_per_deg2) / tile_max_km2))
             rows = cols = max(1, math.ceil(math.sqrt(tiles_needed)))
             feedback.pushInfo(f"Tiling into {rows}×{cols} = {rows*cols} tiles")
             if should_downsample:
@@ -644,7 +675,10 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
             labelrank = _parse_int(f["labelrank"] if "labelrank" in admin1.fields().names() else None)
             if labelrank is None: labelrank = 9  # default less important
             area_km2 = _geom_area_km2(g_clip, out_crs.authid())
-            if area_km2 < MIN_PROVINCE_AREA_KM2:
+            
+            # Relax area threshold for very important provinces (likely capitals)
+            # labelrank <= 3 usually indicates high importance
+            if area_km2 < MIN_PROVINCE_AREA_KM2 and labelrank > 3:
                 continue
 
             center = g_clip.pointOnSurface()
@@ -669,16 +703,62 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
         else:
             feedback.pushWarning(f"Flags directory not found: {FLAGS_DIR}")
 
-        # Sort, dedupe (admin+province), take top N
+        # Sort, dedupe (admin+province), and select with country balancing
+        # 1. Deduplicate
         candidates.sort(key=lambda d: d["rank"])
+        unique_candidates = []
         seen = set()
-        points = []
         for c in candidates:
             key = (c["admin"], c["province"])
             if key in seen:
                 continue
             seen.add(key)
+            unique_candidates.append(c)
+
+        # 2. Group by Country
+        by_country = {}
+        for c in unique_candidates:
+            country = c["admin"]
+            if country not in by_country:
+                by_country[country] = []
+            by_country[country].append(c)
+
+        # 3. Selection Strategy:
+        #    - Ensure at least 1 top province from each country (if possible)
+        #    - Fill remaining slots from the global pool of remaining provinces
+        
+        final_selection = []
+        remaining_pool = []
+        
+        # Sort countries by the rank of their best province to prioritize "important" countries first
+        # if we have more countries than max_provinces (rare but possible)
+        sorted_countries = sorted(by_country.keys(), key=lambda k: by_country[k][0]["rank"])
+        
+        # Pass 1: Take the best province from each country
+        for country in sorted_countries:
+            provinces = by_country[country]
+            # Best one (already sorted by rank in candidates)
+            final_selection.append(provinces[0])
+            # Add rest to pool
+            for p in provinces[1:]:
+                remaining_pool.append(p)
+        
+        # Pass 2: Fill remaining slots from the pool
+        remaining_pool.sort(key=lambda d: d["rank"])
+        
+        needed = max_provinces - len(final_selection)
+        if needed > 0:
+            final_selection.extend(remaining_pool[:needed])
+        else:
+            # If we have more countries than slots, we trim the selection.
+            # Since we sorted countries by importance, we keep the most important ones.
+            final_selection = final_selection[:max_provinces]
             
+        # Sort final output by rank (importance)
+        final_selection.sort(key=lambda d: d["rank"])
+
+        points = []
+        for c in final_selection:
             iso = c["code"]
             raw_flag = iso.split('-')[0].lower() if iso else "xx"
             flag_code = raw_flag if raw_flag in valid_flags else "xx"
@@ -689,8 +769,6 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
                 "pixel_x": c["pixel_x"],
                 "pixel_y": c["pixel_y"]
             })
-            if len(points) >= max_provinces:
-                break
 
         # ---------------- 4) Render PNG (DEM + water overlays) -------------------
         

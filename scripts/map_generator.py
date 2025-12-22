@@ -8,7 +8,7 @@ from collections import deque
 import struct
 
 # Constants
-MIN_ISLAND_SIZE = 30
+MIN_ISLAND_SIZE = 60
 MIN_LAKE_SIZE = 200
 
 # Terrain Types
@@ -438,7 +438,7 @@ class MapGenerator:
         # Generate and write thumbnail
         t_type, t_mag, t_shore = thumbnail_source_terrain
         thumbnail = self.create_thumbnail(t_type, t_mag, t_shore, 0.5)
-        thumbnail.save(os.path.join(variant_output_dir, "thumbnail.png"))
+        thumbnail.save(os.path.join(variant_output_dir, "thumbnail.webp"), "WEBP")
 
         # Manifest
         input_manifest = {}

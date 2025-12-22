@@ -2,6 +2,10 @@
 
 A complete workflow for generating stylised, game-ready terrain maps from real-world data using QGIS and Python.
 
+## Tutorial
+
+[![Tutorial Video](https://img.youtube.com/vi/B_X0nlXqzsA/0.jpg)](https://youtu.be/B_X0nlXqzsA)
+
 ## Features
 
 ### 1. Automated Data Extraction (QGIS)
