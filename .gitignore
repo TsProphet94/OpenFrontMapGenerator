@@ -5,10 +5,8 @@ __pycache__/
 venv/
 env/
 
-# Project specific
-generated/
-StylisedMaps/
-MapGenerator-main/
+# API Key (contains sensitive data)
+apikey
 
 # VS Code
 .vscode/

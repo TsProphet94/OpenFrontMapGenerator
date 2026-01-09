@@ -1,0 +1,78 @@
+{
+  "image": {
+    "path": "Cyprus.png",
+    "width_px": 4096,
+    "height_px": 2506,
+    "dpi": 300
+  },
+  "crs": "EPSG:3857",
+  "extent": {
+    "xmin": 3577495.9058,
+    "ymin": 4089760.8386,
+    "xmax": 4046922.5512,
+    "ymax": 4377067.9914
+  },
+  "origin": "top-left",
+  "points": [
+    {
+      "name": "Mersin",
+      "flag": "tr",
+      "pixel_x": 1079,
+      "pixel_y": 311
+    },
+    {
+      "name": "Lattakia",
+      "flag": "sy",
+      "pixel_x": 3734,
+      "pixel_y": 1180
+    },
+    {
+      "name": "Hatay",
+      "flag": "tr",
+      "pixel_x": 3862,
+      "pixel_y": 439
+    },
+    {
+      "name": "Tartus",
+      "flag": "sy",
+      "pixel_x": 3824,
+      "pixel_y": 1921
+    },
+    {
+      "name": "Antalya",
+      "flag": "tr",
+      "pixel_x": 288,
+      "pixel_y": 262
+    },
+    {
+      "name": "Hamah",
+      "flag": "sy",
+      "pixel_x": 4039,
+      "pixel_y": 1488
+    },
+    {
+      "name": "Nicosia",
+      "flag": "cy",
+      "pixel_x": 882,
+      "pixel_y": 1810
+    },
+    {
+      "name": "Paphos",
+      "flag": "cy",
+      "pixel_x": 346,
+      "pixel_y": 1957
+    },
+    {
+      "name": "Limassol",
+      "flag": "cy",
+      "pixel_x": 823,
+      "pixel_y": 2102
+    },
+    {
+      "name": "Northern Cyprus",
+      "flag": "tr",
+      "pixel_x": 1630,
+      "pixel_y": 1449
+    }
+  ]
+}

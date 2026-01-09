@@ -1,0 +1,19 @@
+{
+  "map": {
+    "height": 2506,
+    "num_land_tiles": 4162431,
+    "width": 4096
+  },
+  "map16x": {
+    "height": 626,
+    "num_land_tiles": 252510,
+    "width": 1024
+  },
+  "map4x": {
+    "height": 1253,
+    "num_land_tiles": 1030777,
+    "width": 2048
+  },
+  "name": "palmislandbig",
+  "nations": []
+}

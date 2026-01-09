@@ -1,0 +1,138 @@
+{
+  "image": {
+    "path": "United Kingdom.png",
+    "width_px": 4096,
+    "height_px": 5031,
+    "dpi": 300
+  },
+  "crs": "EPSG:3857",
+  "extent": {
+    "xmin": -1239858.0437,
+    "ymin": 6386349.4215,
+    "xmax": 296254.0152,
+    "ymax": 8273115.1021
+  },
+  "origin": "top-left",
+  "points": [
+    {
+      "name": "Pas-de-Calais",
+      "flag": "fr",
+      "pixel_x": 3938,
+      "pixel_y": 4610
+    },
+    {
+      "name": "Mayo",
+      "flag": "ie",
+      "pixel_x": 548,
+      "pixel_y": 2989
+    },
+    {
+      "name": "Kerry",
+      "flag": "ie",
+      "pixel_x": 485,
+      "pixel_y": 3863
+    },
+    {
+      "name": "Clare",
+      "flag": "ie",
+      "pixel_x": 657,
+      "pixel_y": 3508
+    },
+    {
+      "name": "Meath",
+      "flag": "ie",
+      "pixel_x": 1351,
+      "pixel_y": 3118
+    },
+    {
+      "name": "Highland",
+      "flag": "gb-sct",
+      "pixel_x": 1800,
+      "pixel_y": 1036
+    },
+    {
+      "name": "Argyll and Bute",
+      "flag": "gb-sct",
+      "pixel_x": 1565,
+      "pixel_y": 1661
+    },
+    {
+      "name": "North Yorkshire",
+      "flag": "gb-eng",
+      "pixel_x": 2862,
+      "pixel_y": 2894
+    },
+    {
+      "name": "Aberdeenshire",
+      "flag": "gb-sct",
+      "pixel_x": 2486,
+      "pixel_y": 1244
+    },
+    {
+      "name": "Cumbria",
+      "flag": "gb-eng",
+      "pixel_x": 2436,
+      "pixel_y": 2618
+    },
+    {
+      "name": "Dumfries and Galloway",
+      "flag": "gb-sct",
+      "pixel_x": 2165,
+      "pixel_y": 2405
+    },
+    {
+      "name": "Perthshire and Kinross",
+      "flag": "gb-sct",
+      "pixel_x": 2192,
+      "pixel_y": 1617
+    },
+    {
+      "name": "Lincolnshire",
+      "flag": "gb-eng",
+      "pixel_x": 3253,
+      "pixel_y": 3376
+    },
+    {
+      "name": "Devon",
+      "flag": "gb-eng",
+      "pixel_x": 2220,
+      "pixel_y": 4532
+    },
+    {
+      "name": "Northumberland",
+      "flag": "gb-eng",
+      "pixel_x": 2691,
+      "pixel_y": 2276
+    },
+    {
+      "name": "Norfolk",
+      "flag": "gb-eng",
+      "pixel_x": 3585,
+      "pixel_y": 3599
+    },
+    {
+      "name": "Powys",
+      "flag": "gb-wls",
+      "pixel_x": 2309,
+      "pixel_y": 3776
+    },
+    {
+      "name": "Suffolk",
+      "flag": "gb-eng",
+      "pixel_x": 3603,
+      "pixel_y": 3811
+    },
+    {
+      "name": "Hampshire",
+      "flag": "gb-eng",
+      "pixel_x": 2939,
+      "pixel_y": 4381
+    },
+    {
+      "name": "Fermanagh",
+      "flag": "gb-nir",
+      "pixel_x": 1033,
+      "pixel_y": 2758
+    }
+  ]
+}

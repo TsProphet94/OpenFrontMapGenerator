@@ -1,0 +1,68 @@
+{
+  "map": {
+    "height": 2504,
+    "num_land_tiles": 2191689,
+    "width": 4096
+  },
+  "map16x": {
+    "height": 626,
+    "num_land_tiles": 128796,
+    "width": 1024
+  },
+  "map4x": {
+    "height": 1252,
+    "num_land_tiles": 536183,
+    "width": 2048
+  },
+  "name": "philippinesbig",
+  "nations": [
+    {
+      "coordinates": [
+        2012,
+        1317
+      ],
+      "flag": "id",
+      "name": "Indonesia"
+    },
+    {
+      "coordinates": [
+        3297,
+        494
+      ],
+      "flag": "ph",
+      "name": "Philippines"
+    },
+    {
+      "coordinates": [
+        1184,
+        200
+      ],
+      "flag": "vn",
+      "name": "Vietnam"
+    },
+    {
+      "coordinates": [
+        802,
+        896
+      ],
+      "flag": "my",
+      "name": "Malaysia"
+    },
+    {
+      "coordinates": [
+        477,
+        359
+      ],
+      "flag": "th",
+      "name": "Thailand"
+    },
+    {
+      "coordinates": [
+        1059,
+        99
+      ],
+      "flag": "kh",
+      "name": "Cambodia"
+    }
+  ]
+}

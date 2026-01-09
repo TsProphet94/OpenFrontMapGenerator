@@ -16,6 +16,7 @@ What it does (per run):
 
 import os, json, zipfile, tempfile, math, datetime
 from urllib.parse import urlencode
+from typing import Tuple, List, Dict, Any, Optional
 
 from qgis.PyQt import QtCore
 from qgis.PyQt.QtCore import QSize, QByteArray
@@ -34,13 +35,25 @@ from qgis.core import (
     QgsUnitTypes, QgsSimpleLineSymbolLayer, QgsLineSymbol, QgsFillSymbol,
     QgsColorRampShader, QgsRasterShader, QgsSingleBandPseudoColorRenderer,
     QgsRasterBandStats, QgsSingleSymbolRenderer, QgsFeatureRequest,
-    QgsRasterDataProvider
+    QgsRasterDataProvider, QgsMarkerSymbol, QgsSimpleMarkerSymbolLayer,
+    QgsPalLayerSettings, QgsVectorLayerSimpleLabeling, QgsTextFormat, QgsPointXY,
+    QgsField
 )
 from qgis import processing  # gdal:merge
 
 # ======================= USER CONSTANTS ==========================
+# Determine project root relative to this script
+try:
+    PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    # Fallback if __file__ is not defined (e.g. running directly in console without saving)
+    # PLEASE UPDATE THIS PATH TO YOUR PROJECT FOLDER IF RUNNING FROM CONSOLE
+    PROJECT_ROOT = os.path.join(os.path.expanduser("~"), "Desktop", "OpenFrontMapGenerator")
+
 # Get a free API Key from: https://portal.opentopography.org/myopentopo
-API_KEY = "dd4e0a24f02cbbadff55e7d1c5171672"
+# Paste your API key below:
+API_KEY = "dd4e0a24f02cbbadff55e7d1c5171672"  # <-- PASTE YOUR API KEY HERE
+
 # Embedded OpenFront Palette (Discrete)
 DEM_COLOR_RAMP = [
     (0.0, "#00006a", "Water ≤ 0 m"),
@@ -201,10 +214,13 @@ def _parse_int(val):
             return None
 
 def _best_attr(f, names):
-    """First present stringy attribute from a list of field names."""
+    """First present stringy attribute from a list of field names (case-insensitive)."""
+    field_map = {fn.lower(): fn for fn in f.fields().names()}
     for n in names:
-        if n in f.fields().names():
-            v = f[n]
+        n_lower = n.lower()
+        if n_lower in field_map:
+            real_name = field_map[n_lower]
+            v = f[real_name]
             if v not in (None, ""):
                 return str(v)
     return ""
@@ -348,6 +364,25 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
             river_width_eff = river_width
         feedback.pushInfo(f"River stroke width (effective): {river_width_eff:.2f} px")
 
+        # ---------------- 1) DEM ----------------
+        dem, ocean_qcolor = self._process_dem(params, context, feedback, extent_out, width_px, height_px, out_crs, dynamic_scale, south, west, north, east)
+
+        # ---------------- 2) Vectors ----------------
+        rivers_mem, lakes_mem = self._process_vectors(context, feedback, cache_dir, out_crs, extent_out, extent_out_geom, river_width_eff, ocean_qcolor, min_lake_area_px2, width_px, height_px, width_units, height_units)
+
+        # ---------------- 3) Provinces ----------------
+        points = self._select_provinces(context, feedback, cache_dir, out_crs, extent_out_geom, max_provinces, width_px, height_px, xmin, ymax, width_units, height_units)
+
+        # ---------------- 4) Render ----------------
+        outputs = self._render_map(feedback, map_folder, base_name, width_px, height_px, dpi, out_crs, extent_out, transparent, dem, rivers_mem, lakes_mem, points, xmin, ymin, width_units, height_units)
+
+        # Cleanup temporary files
+        _cleanup_temp_files(feedback)
+
+        return outputs
+
+    # Some QGIS loaders call a method on the class:
+    def _process_dem(self, params, context, feedback, extent_out, width_px, height_px, out_crs, dynamic_scale, south, west, north, east):
         # ---------------- 1) DEM (OpenTopography) with auto-tiling ----------------
         dem_source_idx = self.parameterAsEnum(params, self.P_DEM_SOURCE, context)
         area_km2 = _bbox_area_km2(south, west, north, east)
@@ -379,7 +414,6 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
         feedback.pushInfo(f"DEM Source: {dem_type} (Area: {area_km2:,.0f} km²)")
 
         # Calculate target resolution in degrees for downsampling optimization
-        # COP90 is ~0.000833 deg/px. If we need much less, we downsample immediately.
         req_res_deg = min((east - west) / width_px, (north - south) / height_px)
         target_res_deg = req_res_deg / 2.0  # Nyquist safety factor
         should_downsample = target_res_deg > 0.002  # Only if > ~2x coarser than native (approx)
@@ -394,7 +428,6 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
         if area_km2 <= tile_max_km2:
             feedback.pushInfo("Downloading single DEM tile…")
             dem_path = _download_dem_tile(south, west, north, east)
-            # Optional: Downsample single tile if huge? (Usually not needed if area is small)
         else:
             feedback.pushInfo("Area too large → tiling and mosaicking…")
             lat_span = north - south
@@ -419,7 +452,6 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
                     try:
                         raw_tile = _download_dem_tile(s, w, n, e)
                         if should_downsample:
-                            # Downsample immediately to save disk/memory for merge
                             ds_tile = _save_temp(b"", ".tif"); os.remove(ds_tile)
                             processing.run("gdal:warpreproject", {
                                 'INPUT': raw_tile,
@@ -433,13 +465,10 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
                                 'EXTRA': "",
                                 'OUTPUT': ds_tile
                             }, context=context, feedback=feedback)
-                            
-                            # Try to delete huge raw tile; if locked, skip (cleanup will catch it later)
                             try:
                                 os.remove(raw_tile)
                             except OSError:
                                 feedback.pushWarning(f"Could not delete intermediate tile {raw_tile} (locked).")
-                                
                             dem_tiles.append(ds_tile)
                         else:
                             dem_tiles.append(raw_tile)
@@ -456,21 +485,19 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
             )
             dem_path = merged
 
-        # ---------------- 1b) Warp & Smooth DEM to Output Resolution ----------------
-        # We warp the raw DEM to the target CRS and exact output pixel dimensions using Bilinear resampling.
-        # This effectively smooths the coastlines and terrain to match the output map, preventing jagged edges.
+        # Warp & Smooth
         feedback.pushInfo("Warping and smoothing DEM to output resolution...")
         dem_warped = _save_temp(b"", ".tif"); os.remove(dem_warped)
         processing.run("gdal:warpreproject", {
             'INPUT': dem_path,
-            'SOURCE_CRS': QgsCoordinateReferenceSystem("EPSG:4326"), # COP90 is usually 4326
+            'SOURCE_CRS': QgsCoordinateReferenceSystem("EPSG:4326"),
             'TARGET_CRS': out_crs,
             'RESAMPLING': 1, # Bilinear for smoothing
             'NODATA': None,
             'TARGET_RESOLUTION': None,
             'OPTIONS': "",
-            'DATA_TYPE': 0, # Use input type (Float)
-            'EXTRA': f'-ts {width_px} {height_px}', # Force exact output size
+            'DATA_TYPE': 0,
+            'EXTRA': f'-ts {width_px} {height_px}',
             'OUTPUT': dem_warped
         }, context=context, feedback=feedback)
         
@@ -478,23 +505,17 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
         if not dem.isValid():
             raise QgsProcessingException("Failed to load Warped DEM.")
         
-        # Calculate dynamic ramp if requested
+        # Calculate dynamic ramp
         current_ramp = DEM_COLOR_RAMP
         if dynamic_scale:
             feedback.pushInfo("Calculating DEM statistics for dynamic scaling...")
-            # Calculate stats on the actual extent
             provider = dem.dataProvider()
             stats = provider.bandStatistics(1, QgsRasterBandStats.Max, extent_out, 0)
             max_z = stats.maximumValue
             feedback.pushInfo(f"Local Max Elevation: {max_z:.2f} m")
             
             if max_z > 0:
-                # Scale the ramp so that the highest color (5000m) maps to max_z
-                # But keep Water (<=0) fixed.
                 scale_factor = max_z / 5000.0
-                # Avoid extreme scaling for very flat areas (e.g. < 10m) to prevent noise amplification?
-                # User asked for "nice palette" even for flat areas, so we scale fully.
-                
                 new_ramp = []
                 for val, color, label in DEM_COLOR_RAMP:
                     if val <= 0:
@@ -507,192 +528,116 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
         # Apply embedded style
         _apply_dem_style(dem, current_ramp)
         
-        # Extract ocean color from the first item in our ramp (Water <= 0)
+        # Extract ocean color
         ocean_hex = current_ramp[0][1] if current_ramp else "#3a78c2"
         ocean_qcolor = QColor(ocean_hex)
         
         feedback.pushInfo(f"Ocean color used: {ocean_hex}")
         QgsProject.instance().addMapLayer(dem)
+        
+        return dem, ocean_qcolor
 
-        # ---------------- 2) Major rivers & lakes (Natural Earth) ----------------
+    def _process_vectors(self, context, feedback, cache_dir, out_crs, extent_out, extent_out_geom, river_width_eff, ocean_qcolor, min_lake_area_px2, width_px, height_px, width_units, height_units):
         ne_dir = _ensure_folder(os.path.join(cache_dir, "natural_earth"))
 
-        # Rivers: centerlines (as MultiLineString)
+        # Rivers
         rivers_mem = None
         ne_riv = os.path.join(ne_dir, "ne_10m_rivers_lake_centerlines.shp")
         if not os.path.exists(ne_riv):
-            # Try multiple mirrors for Natural Earth
             ne_riv = _download_ne_zip("https://naturalearth.s3.amazonaws.com/10m_physical/ne_10m_rivers_lake_centerlines.zip", ne_dir)
             if not ne_riv or not os.path.exists(ne_riv):
                 ne_riv = _download_ne_zip("https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip", ne_dir)
-        if not ne_riv or not os.path.exists(ne_riv):
-            ne_riv = None
-            feedback.pushWarning("Rivers shapefile not found or downloaded.")
-        else:
-            feedback.pushInfo(f"Rivers shapefile: {ne_riv}")
-        if ne_riv:
+        
+        if ne_riv and os.path.exists(ne_riv):
             rivers_src = QgsVectorLayer(ne_riv, "NE Rivers", "ogr")
-            feedback.pushInfo(f"Rivers layer valid: {rivers_src.isValid()}")
             if rivers_src.isValid():
                 rivers_mem = QgsVectorLayer("MultiLineString?crs=" + out_crs.authid(), "Rivers (major)", "memory")
                 dp = rivers_mem.dataProvider()
                 dp.addAttributes(rivers_src.fields()); rivers_mem.updateFields()
                 to_out_r = QgsCoordinateTransform(rivers_src.crs(), out_crs, context.transformContext())
-                
-                # Create filter rect in source CRS to optimize large datasets
                 tr_r = QgsCoordinateTransform(out_crs, rivers_src.crs(), context.transformContext())
                 filter_rect_r = tr_r.transformBoundingBox(extent_out)
 
                 feats = []
-                def _collect_river_feats(relax=False):
-                    local = []
-                    req = QgsFeatureRequest().setFilterRect(filter_rect_r)
-                    for f in rivers_src.getFeatures(req):
-                        sr = _parse_int(f["scalerank"] if "scalerank" in rivers_src.fields().names() else None)
-                        # Include features when scalerank missing; if relax=True, ignore scalerank entirely
-                        if not relax and (sr is not None and sr > MAJOR_WATER_SCALERANK_MAX):
-                            continue
-                        g = f.geometry()
-                        if not g: continue
-                        g = QgsGeometry(g); g.transform(to_out_r)
-                        if not g.intersects(extent_out_geom): continue
-                        g_clip = g.intersection(extent_out_geom)
-                        if not g_clip or g_clip.isEmpty(): continue
-                        nf = QgsFeature(rivers_mem.fields()); nf.setAttributes(f.attributes()); nf.setGeometry(g_clip); local.append(nf)
-                    return local
+                req = QgsFeatureRequest().setFilterRect(filter_rect_r)
+                for f in rivers_src.getFeatures(req):
+                    sr = _parse_int(_best_attr(f, ["scalerank"]))
+                    if sr is not None and sr > MAJOR_WATER_SCALERANK_MAX:
+                        continue
+                    g = f.geometry()
+                    if not g: continue
+                    g = QgsGeometry(g); g.transform(to_out_r)
+                    if not g.intersects(extent_out_geom): continue
+                    g_clip = g.intersection(extent_out_geom)
+                    if not g_clip or g_clip.isEmpty(): continue
+                    nf = QgsFeature(rivers_mem.fields()); nf.setAttributes(f.attributes()); nf.setGeometry(g_clip); feats.append(nf)
 
-                feats = _collect_river_feats(relax=False)
-                feedback.pushInfo(f"Rivers features collected (initial): {len(feats)}")
-                if not feats:
-                    feedback.pushInfo("No rivers after initial filter → relaxing scalerank filter…")
-                    feats = _collect_river_feats(relax=True)
-                    feedback.pushInfo(f"Rivers features collected (relaxed): {len(feats)}")
                 if feats:
                     dp.addFeatures(feats); rivers_mem.updateExtents()
                     line = QgsSimpleLineSymbolLayer(); line.setColor(ocean_qcolor); line.setWidth(river_width_eff); line.setWidthUnit(QgsUnitTypes.RenderPixels)
                     sym = QgsLineSymbol(); sym.changeSymbolLayer(0, line)
                     rivers_mem.setRenderer(QgsSingleSymbolRenderer(sym))
-                    rivers_mem.triggerRepaint()
-                    feedback.pushInfo(f"Rivers added: {len(feats)} features, color: {ocean_qcolor.name()}")
                     QgsProject.instance().addMapLayer(rivers_mem)
-                else:
-                    feedback.pushWarning("No river features to add.")
 
-        # Lakes: polygons (as MultiPolygon)
+        # Lakes
         lakes_mem = None
         ne_lakes = os.path.join(ne_dir, "ne_10m_lakes.shp")
         if not os.path.exists(ne_lakes):
             ne_lakes = _download_ne_zip("https://naturalearth.s3.amazonaws.com/10m_physical/ne_10m_lakes.zip", ne_dir)
             if not ne_lakes or not os.path.exists(ne_lakes):
                 ne_lakes = _download_ne_zip("https://naciscdn.org/naturalearth/10m/physical/ne_10m_lakes.zip", ne_dir)
+        
         if ne_lakes and os.path.exists(ne_lakes):
-            feedback.pushInfo(f"Lakes shapefile: {ne_lakes}")
             lakes_src = QgsVectorLayer(ne_lakes, "NE Lakes", "ogr")
-            feedback.pushInfo(f"Lakes layer valid: {lakes_src.isValid()}")
             if lakes_src.isValid():
                 lakes_mem = QgsVectorLayer("MultiPolygon?crs=" + out_crs.authid(), "Lakes (major)", "memory")
                 dp = lakes_mem.dataProvider()
                 dp.addAttributes(lakes_src.fields()); lakes_mem.updateFields()
                 to_out_l = QgsCoordinateTransform(lakes_src.crs(), out_crs, context.transformContext())
-                
-                # Create filter rect in source CRS
                 tr_l = QgsCoordinateTransform(out_crs, lakes_src.crs(), context.transformContext())
                 filter_rect_l = tr_l.transformBoundingBox(extent_out)
 
                 feats = []
-                def _collect_lake_feats(relax=False):
-                    local = []
-                    req = QgsFeatureRequest().setFilterRect(filter_rect_l)
-                    for f in lakes_src.getFeatures(req):
-                        sr = _parse_int(f["scalerank"] if "scalerank" in lakes_src.fields().names() else None)
-                        # Include when scalerank missing; if relax=True, ignore scalerank and area threshold
-                        if not relax and (sr is not None and sr > MAJOR_WATER_SCALERANK_MAX):
-                            continue
-                        g = f.geometry()
-                        if not g: continue
-                        g = QgsGeometry(g); g.transform(to_out_l)
-                        if not g.intersects(extent_out_geom): continue
-                        g_clip = g.intersection(extent_out_geom)
-                        if not g_clip or g_clip.isEmpty(): continue
-                        if not relax:
-                            # Dual threshold: km² or pixel area
-                            area_km2 = _geom_area_km2(g_clip, out_crs.authid())
-                            # Approximate pixel area using map extent scaling
-                            try:
-                                area_units = g_clip.area()
-                                px_per_unit_x = width_px / max(1e-12, width_units)
-                                px_per_unit_y = height_px / max(1e-12, height_units)
-                                area_px2 = area_units * px_per_unit_x * px_per_unit_y
-                            except Exception:
-                                area_px2 = 0.0
-                            if area_km2 < MIN_LAKE_AREA_KM2 and area_px2 < float(min_lake_area_px2):
-                                continue
-                        nf = QgsFeature(lakes_mem.fields()); nf.setAttributes(f.attributes()); nf.setGeometry(g_clip); local.append(nf)
-                    return local
+                req = QgsFeatureRequest().setFilterRect(filter_rect_l)
+                for f in lakes_src.getFeatures(req):
+                    sr = _parse_int(_best_attr(f, ["scalerank"]))
+                    if sr is not None and sr > MAJOR_WATER_SCALERANK_MAX:
+                        continue
+                    g = f.geometry()
+                    if not g: continue
+                    g = QgsGeometry(g); g.transform(to_out_l)
+                    if not g.intersects(extent_out_geom): continue
+                    g_clip = g.intersection(extent_out_geom)
+                    if not g_clip or g_clip.isEmpty(): continue
+                    
+                    area_km2 = _geom_area_km2(g_clip, out_crs.authid())
+                    try:
+                        area_units = g_clip.area()
+                        px_per_unit_x = width_px / max(1e-12, width_units)
+                        px_per_unit_y = height_px / max(1e-12, height_units)
+                        area_px2 = area_units * px_per_unit_x * px_per_unit_y
+                    except Exception:
+                        area_px2 = 0.0
+                    if area_km2 < MIN_LAKE_AREA_KM2 and area_px2 < float(min_lake_area_px2):
+                        continue
+                        
+                    nf = QgsFeature(lakes_mem.fields()); nf.setAttributes(f.attributes()); nf.setGeometry(g_clip); feats.append(nf)
 
-                feats = _collect_lake_feats(relax=False)
-                feedback.pushInfo(f"Lakes features collected (initial): {len(feats)}")
-                if not feats:
-                    feedback.pushInfo("No lakes after initial filter → relaxing scalerank/area filters…")
-                    feats = _collect_lake_feats(relax=True)
-                    feedback.pushInfo(f"Lakes features collected (relaxed): {len(feats)}")
                 if feats:
                     dp.addFeatures(feats); lakes_mem.updateExtents()
                     fill = QgsFillSymbol.createSimple({"color": ocean_qcolor.name(), "outline_style": "no"})
                     lakes_mem.setRenderer(QgsSingleSymbolRenderer(fill))
-                    lakes_mem.triggerRepaint()
-                    feedback.pushInfo(f"Lakes added: {len(feats)} features, color: {ocean_qcolor.name()}")
                     QgsProject.instance().addMapLayer(lakes_mem)
-                else:
-                    feedback.pushWarning("No lake features to add.")
-        else:
-            feedback.pushWarning("Lakes shapefile not found or downloaded.")
+        
+        return rivers_mem, lakes_mem
 
-        # ---------------- 3) Province centers (select top N) ---------------------
-        feedback.pushInfo("Selecting major provinces/states and computing pixel centers…")
-        ne_admin1 = os.path.join(ne_dir, "ne_10m_admin_1_states_provinces.shp")
-        if not os.path.exists(ne_admin1):
-            ne_admin1 = _download_ne_zip("https://naturalearth.s3.amazonaws.com/10m_cultural/ne_10m_admin_1_states_provinces.zip", ne_dir)
-            if not ne_admin1 or not os.path.exists(ne_admin1):
-                ne_admin1 = _download_ne_zip("https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip", ne_dir)
-        if not ne_admin1 or not os.path.exists(ne_admin1):
-            raise QgsProcessingException("Failed to download Natural Earth admin-1 data.")
-        admin1 = QgsVectorLayer(ne_admin1, "Admin-1", "ogr")
-        if not admin1.isValid():
-            raise QgsProcessingException("Failed to load Natural Earth admin-1 (states/provinces).")
-
-        to_out_a1 = QgsCoordinateTransform(admin1.crs(), out_crs, context.transformContext())
-
-        candidates = []
-        for f in admin1.getFeatures():
-            g = f.geometry()
-            if not g: continue
-            g = QgsGeometry(g); g.transform(to_out_a1)
-            if not g.intersects(extent_out_geom): continue
-            g_clip = g.intersection(extent_out_geom)
-            if not g_clip or g_clip.isEmpty(): continue
-
-            labelrank = _parse_int(f["labelrank"] if "labelrank" in admin1.fields().names() else None)
-            if labelrank is None: labelrank = 9  # default less important
-            area_km2 = _geom_area_km2(g_clip, out_crs.authid())
-            
-            # Relax area threshold for very important provinces (likely capitals)
-            # labelrank <= 3 usually indicates high importance
-            if area_km2 < MIN_PROVINCE_AREA_KM2 and labelrank > 3:
-                continue
-
-            center = g_clip.pointOnSurface()
-            if center.isEmpty(): continue
-            pt = center.asPoint()
-            px, py = world_to_pixel(pt.x(), pt.y())
-
-            candidates.append({
-                "rank": (labelrank, -area_km2),
-                "admin": _best_attr(f, ["admin", "ADM0_NAME", "ADM0NAME", "admin_name"]),
-                "province": _best_attr(f, ["name", "name_en", "name_1", "name_local"]),
-                "code": _best_attr(f, ["iso_3166_2", "adm1_code", "code_hasc"]),
-                "pixel_x": px, "pixel_y": py
-            })
+    def _select_provinces(self, context, feedback, cache_dir, out_crs, extent_out_geom, max_provinces, width_px, height_px, xmin, ymax, width_units, height_units):
+        ne_dir = _ensure_folder(os.path.join(cache_dir, "natural_earth"))
+        
+        def world_to_pixel(x, y):
+            px = (x - xmin) / width_units * width_px
+            py = (ymax - y) / height_units * height_px
+            return int(round(px)), int(round(py))
 
         # Scan for available flags
         valid_flags = set()
@@ -700,68 +645,172 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
             for fn in os.listdir(FLAGS_DIR):
                 if fn.endswith(".svg"):
                     valid_flags.add(fn.rsplit('.', 1)[0].lower())
-        else:
-            feedback.pushWarning(f"Flags directory not found: {FLAGS_DIR}")
 
-        # Sort, dedupe (admin+province), and select with country balancing
-        # 1. Deduplicate
-        candidates.sort(key=lambda d: d["rank"])
-        unique_candidates = []
-        seen = set()
-        for c in candidates:
-            key = (c["admin"], c["province"])
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_candidates.append(c)
-
-        # 2. Group by Country
-        by_country = {}
-        for c in unique_candidates:
-            country = c["admin"]
-            if country not in by_country:
-                by_country[country] = []
-            by_country[country].append(c)
-
-        # 3. Selection Strategy:
-        #    - Ensure at least 1 top province from each country (if possible)
-        #    - Fill remaining slots from the global pool of remaining provinces
+        # Check Admin 0 (Countries)
+        ne_admin0 = os.path.join(ne_dir, "ne_10m_admin_0_countries.shp")
+        if not os.path.exists(ne_admin0):
+             ne_admin0 = _download_ne_zip("https://naturalearth.s3.amazonaws.com/10m_cultural/ne_10m_admin_0_countries.zip", ne_dir)
+        
+        use_countries_mode = False
+        country_candidates = []
+        
+        if ne_admin0 and os.path.exists(ne_admin0):
+            admin0 = QgsVectorLayer(ne_admin0, "Admin-0", "ogr")
+            if admin0.isValid():
+                to_out_a0 = QgsCoordinateTransform(admin0.crs(), out_crs, context.transformContext())
+                for f in admin0.getFeatures():
+                    g = f.geometry()
+                    if not g: continue
+                    g = QgsGeometry(g); g.transform(to_out_a0)
+                    if not g.intersects(extent_out_geom): continue
+                    g_clip = g.intersection(extent_out_geom)
+                    if not g_clip or g_clip.isEmpty(): continue
+                    
+                    area_km2 = _geom_area_km2(g_clip, out_crs.authid())
+                    if area_km2 < MIN_PROVINCE_AREA_KM2: continue
+                    
+                    center = g_clip.pointOnSurface()
+                    if center.isEmpty(): continue
+                    pt = center.asPoint()
+                    px, py = world_to_pixel(pt.x(), pt.y())
+                    
+                    name = _best_attr(f, ["NAME", "NAME_EN", "ADMIN"])
+                    iso = _best_attr(f, ["ISO_A2", "ISO_A2_EH"])
+                    
+                    country_candidates.append({
+                        "name": name,
+                        "flag": iso.lower() if iso else "unknown",
+                        "pixel_x": px, "pixel_y": py,
+                        "area_km2": area_km2
+                    })
+                
+                if len(country_candidates) >= 10:
+                    use_countries_mode = True
+                    feedback.pushInfo(f"Found {len(country_candidates)} countries (>= 10). Switching to Country mode.")
         
         final_selection = []
-        remaining_pool = []
         
-        # Sort countries by the rank of their best province to prioritize "important" countries first
-        # if we have more countries than max_provinces (rare but possible)
-        sorted_countries = sorted(by_country.keys(), key=lambda k: by_country[k][0]["rank"])
-        
-        # Pass 1: Take the best province from each country
-        for country in sorted_countries:
-            provinces = by_country[country]
-            # Best one (already sorted by rank in candidates)
-            final_selection.append(provinces[0])
-            # Add rest to pool
-            for p in provinces[1:]:
-                remaining_pool.append(p)
-        
-        # Pass 2: Fill remaining slots from the pool
-        remaining_pool.sort(key=lambda d: d["rank"])
-        
-        needed = max_provinces - len(final_selection)
-        if needed > 0:
-            final_selection.extend(remaining_pool[:needed])
+        if use_countries_mode:
+            country_candidates.sort(key=lambda x: x["area_km2"], reverse=True)
+            selected_countries = country_candidates[:max_provinces]
+            for c in selected_countries:
+                final_selection.append({
+                    "province": c["name"],
+                    "admin": c["name"],
+                    "geonunit": c["name"],
+                    "code": c["flag"],
+                    "pixel_x": c["pixel_x"],
+                    "pixel_y": c["pixel_y"],
+                    "rank": (0, -c["area_km2"])
+                })
         else:
-            # If we have more countries than slots, we trim the selection.
-            # Since we sorted countries by importance, we keep the most important ones.
-            final_selection = final_selection[:max_provinces]
+            ne_admin1 = os.path.join(ne_dir, "ne_10m_admin_1_states_provinces.shp")
+            if not os.path.exists(ne_admin1):
+                ne_admin1 = _download_ne_zip("https://naturalearth.s3.amazonaws.com/10m_cultural/ne_10m_admin_1_states_provinces.zip", ne_dir)
+                if not ne_admin1 or not os.path.exists(ne_admin1):
+                    ne_admin1 = _download_ne_zip("https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip", ne_dir)
             
-        # Sort final output by rank (importance)
-        final_selection.sort(key=lambda d: d["rank"])
+            admin1 = QgsVectorLayer(ne_admin1, "Admin-1", "ogr")
+            if admin1.isValid():
+                to_out_a1 = QgsCoordinateTransform(admin1.crs(), out_crs, context.transformContext())
+                candidates = []
+                country_areas = {}
 
+                for f in admin1.getFeatures():
+                    g = f.geometry()
+                    if not g: continue
+                    g = QgsGeometry(g); g.transform(to_out_a1)
+                    if not g.intersects(extent_out_geom): continue
+                    g_clip = g.intersection(extent_out_geom)
+                    if not g_clip or g_clip.isEmpty(): continue
+
+                    labelrank = _parse_int(_best_attr(f, ["labelrank"]))
+                    if labelrank is None: labelrank = 9
+                    area_km2 = _geom_area_km2(g_clip, out_crs.authid())
+                    
+                    admin_name = _best_attr(f, ["admin", "ADM0_NAME", "ADM0NAME", "admin_name"])
+                    geonunit = _best_attr(f, ["geonunit", "geounit", "GU_A3"])
+                    group_key = geonunit if geonunit else admin_name
+                    if not group_key: group_key = "Unknown"
+                    
+                    country_areas[group_key] = country_areas.get(group_key, 0.0) + area_km2
+
+                    if area_km2 < MIN_PROVINCE_AREA_KM2 and labelrank > 3:
+                        continue
+
+                    center = g_clip.pointOnSurface()
+                    if center.isEmpty(): continue
+                    pt = center.asPoint()
+                    px, py = world_to_pixel(pt.x(), pt.y())
+
+                    candidates.append({
+                        "rank": (labelrank, -area_km2),
+                        "admin": admin_name,
+                        "geonunit": geonunit,
+                        "province": _best_attr(f, ["name", "name_en", "name_1", "name_local"]),
+                        "code": _best_attr(f, ["iso_3166_2", "adm1_code", "code_hasc"]),
+                        "pixel_x": px, "pixel_y": py,
+                        "area_km2": area_km2
+                    })
+
+                candidates.sort(key=lambda d: d["rank"])
+                unique_candidates = []
+                seen = set()
+                for c in candidates:
+                    key = (c["admin"], c["province"])
+                    if key in seen: continue
+                    seen.add(key)
+                    unique_candidates.append(c)
+
+                by_country = {}
+                for c in unique_candidates:
+                    group_key = c["geonunit"] if c["geonunit"] else c["admin"]
+                    if not group_key: group_key = "Unknown"
+                    if group_key not in by_country: by_country[group_key] = []
+                    by_country[group_key].append(c)
+
+                total_land_area = sum(country_areas.values())
+                if total_land_area > 0:
+                    allocations = {}
+                    remaining_slots = max_provinces
+                    for country, area in country_areas.items():
+                        if country not in by_country: continue
+                        share = area / total_land_area
+                        count = int(math.floor(share * max_provinces))
+                        allocations[country] = count
+                        remaining_slots -= count
+                    
+                    if remaining_slots > 0:
+                        remainders = []
+                        for country, area in country_areas.items():
+                            if country not in by_country: continue
+                            share = area / total_land_area
+                            nominal = share * max_provinces
+                            remainder = nominal - math.floor(nominal)
+                            remainders.append((remainder, country))
+                        remainders.sort(key=lambda x: x[0], reverse=True)
+                        for i in range(min(remaining_slots, len(remainders))):
+                            allocations[remainders[i][1]] += 1
+                    
+                    for country, target_count in allocations.items():
+                        provinces = by_country[country]
+                        selected = provinces[:target_count]
+                        final_selection.extend(selected)
+                else:
+                    final_selection = unique_candidates[:max_provinces]
+
+        final_selection.sort(key=lambda d: d["rank"])
         points = []
         for c in final_selection:
             iso = c["code"]
-            raw_flag = iso.split('-')[0].lower() if iso else "xx"
-            flag_code = raw_flag if raw_flag in valid_flags else "xx"
+            flag_code = "xx"
+            if iso:
+                full_flag = iso.lower()
+                short_flag = iso.split('-')[0].lower()
+                if full_flag in valid_flags:
+                    flag_code = full_flag
+                elif short_flag in valid_flags:
+                    flag_code = short_flag
             
             points.append({
                 "name": c["province"],
@@ -769,71 +818,98 @@ class MapExporterDemRiversProvPixels(QgsProcessingAlgorithm):
                 "pixel_x": c["pixel_x"],
                 "pixel_y": c["pixel_y"]
             })
+        return points
 
-        # ---------------- 4) Render PNG (DEM + water overlays) -------------------
-        
-        # --- Compose and render map (DEM at bottom, lakes, then rivers) ---
+    def _render_map(self, feedback, map_folder, base_name, width_px, height_px, dpi, out_crs, extent_out, transparent, dem, rivers_mem, lakes_mem, points, xmin, ymin, width_units, height_units):
         ms = QgsMapSettings()
-        # QgsMapSettings.setLayers() expects the list in Top-to-Bottom order (index 0 is top).
         layer_order = []
-        if rivers_mem and rivers_mem.isValid():
-            layer_order.append(rivers_mem)
-        if lakes_mem and lakes_mem.isValid():
-            layer_order.append(lakes_mem)
+        if rivers_mem and rivers_mem.isValid(): layer_order.append(rivers_mem)
+        if lakes_mem and lakes_mem.isValid(): layer_order.append(lakes_mem)
         layer_order.append(dem)
         
-        # Ensure we actually include vectors in output
-        if len(layer_order) == 1:
-            feedback.pushWarning("No valid rivers/lakes layers to render; exporting DEM only.")
-        else:
-            feedback.pushInfo(f"Rendering layers (Top->Bottom): {[l.name() for l in layer_order]}")
         ms.setLayers(layer_order)
         ms.setDestinationCrs(out_crs)
-        # Transparent background if requested; otherwise solid opaque backdrop
         ms.setBackgroundColor(QColor(0, 0, 0, 0 if transparent else 255))
         ms.setExtent(extent_out)
         ms.setOutputSize(QSize(width_px, height_px))
         ms.setOutputDpi(dpi)
-        
-        # Disable Antialiasing to ensure strict palette colors (no blending/blurring)
         ms.setFlag(QgsMapSettings.Antialiasing, False)
         ms.setFlag(QgsMapSettings.HighQualityImageTransforms, False)
         
-        # Ensure DEM uses Nearest Neighbour for final render to avoid interpolation colors
         dem.dataProvider().setZoomedInResamplingMethod(QgsRasterDataProvider.ResamplingMethod.Nearest)
         dem.dataProvider().setZoomedOutResamplingMethod(QgsRasterDataProvider.ResamplingMethod.Nearest)
 
         job = QgsMapRendererParallelJob(ms)
         job.start(); job.waitForFinished()
         img = job.renderedImage()
-        if img.isNull():
-            raise QgsProcessingException("Renderer produced a null image.")
         
         out_png = os.path.join(map_folder, f"{base_name}.png")
-        if not img.save(out_png, "png"):
-            raise QgsProcessingException("Failed to save PNG.")
+        img.save(out_png, "png")
         feedback.pushInfo(f"Styled PNG written: {out_png}")
 
-        # ---------------- 5) Write companion JSON --------------------------------
-        out_prov_json = os.path.join(map_folder, f"{base_name}.json")
+        # Debug Map
+        debug_points_mem = QgsVectorLayer("Point?crs=" + out_crs.authid(), "Debug Points", "memory")
+        dp_pts = debug_points_mem.dataProvider()
+        dp_pts.addAttributes([QgsField("name", QtCore.QVariant.String)])
+        debug_points_mem.updateFields()
         
+        debug_feats = []
+        for p in points:
+            mx = (p["pixel_x"] * width_units / width_px) + xmin
+            my = extent_out.yMaximum() - (p["pixel_y"] * height_units / height_px)
+            f = QgsFeature(debug_points_mem.fields())
+            f.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(mx, my)))
+            f.setAttribute("name", p["name"])
+            debug_feats.append(f)
+            
+        dp_pts.addFeatures(debug_feats)
+        debug_points_mem.updateExtents()
+        
+        marker_sym = QgsMarkerSymbol.createSimple({'color': '255,0,0', 'size': '4', 'outline_color': '255,255,255'})
+        debug_points_mem.setRenderer(QgsSingleSymbolRenderer(marker_sym))
+        
+        pal_settings = QgsPalLayerSettings()
+        pal_settings.fieldName = "name"
+        text_format = QgsTextFormat()
+        text_format.setSize(10)
+        text_format.setColor(QColor("black"))
+        buffer_settings = text_format.buffer()
+        buffer_settings.setEnabled(True)
+        buffer_settings.setSize(1)
+        buffer_settings.setColor(QColor("white"))
+        pal_settings.setFormat(text_format)
+        
+        labeling = QgsVectorLayerSimpleLabeling(pal_settings)
+        debug_points_mem.setLabeling(labeling)
+        debug_points_mem.setLabelsEnabled(True)
+        
+        debug_layer_order = [debug_points_mem] + layer_order
+        ms.setLayers(debug_layer_order)
+        ms.setFlag(QgsMapSettings.Antialiasing, True)
+        
+        job_debug = QgsMapRendererParallelJob(ms)
+        job_debug.start(); job_debug.waitForFinished()
+        img_debug = job_debug.renderedImage()
+        
+        out_debug_png = os.path.join(map_folder, f"{base_name}_debug.png")
+        img_debug.save(out_debug_png, "png")
+
+        # JSON
+        out_prov_json = os.path.join(map_folder, f"{base_name}.json")
+        # Use relative path (just the filename) to avoid exposing local file paths
+        relative_png_path = f"{base_name}.png"
         out_obj = {
-            "image": {"path": out_png, "width_px": width_px, "height_px": height_px, "dpi": dpi},
+            "image": {"path": relative_png_path, "width_px": width_px, "height_px": height_px, "dpi": dpi},
             "crs": out_crs.authid(),
-            "extent": {"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax},
+            "extent": {"xmin": xmin, "ymin": ymin, "xmax": extent_out.xMaximum(), "ymax": extent_out.yMaximum()},
             "origin": "top-left",
             "points": points
         }
         with open(out_prov_json, "w", encoding="utf-8") as fjson:
             json.dump(out_obj, fjson, indent=2)
-        feedback.pushInfo(f"Province centers JSON written: {out_prov_json} (count: {len(points)})")
-
-        # Cleanup temporary files
-        _cleanup_temp_files(feedback)
-
+            
         return { "PNG": out_png, "PROVINCE_JSON": out_prov_json }
 
-    # Some QGIS loaders call a method on the class:
     def createInstance(self):
         return MapExporterDemRiversProvPixels()
 

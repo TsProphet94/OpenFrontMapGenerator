@@ -107,16 +107,18 @@ class MapGenerator:
         clean_name = self.map_name.lower().replace(" ", "")
         
         # Big Version (L0, L1, L2)
-        self.save_variant(clean_name, 
+        self.save_variant(clean_name + "big", 
                           l0_data, l1_data, l2_data,
                           l0_land, l1_land, l2_land,
+                          (self.terrain_type, l1_type, l2_type),  # Terrain types for dimension calculation
                           (l1_type, l1_mag, l1_shore), # Thumbnail source (map4x of Big)
                           1.0)
                           
         # Small Version (L1, L2, L3)
-        self.save_variant(clean_name + "small",
+        self.save_variant(clean_name,
                           l1_data, l2_data, l3_data,
                           l1_land, l2_land, l3_land,
+                          (l1_type, l2_type, l3_type),  # Terrain types for dimension calculation
                           (l2_type, l2_mag, l2_shore), # Thumbnail source (map4x of Small)
                           0.5)
 
@@ -414,6 +416,7 @@ class MapGenerator:
     def save_variant(self, variant_name, 
                      map_data, map4x_data, map16x_data, 
                      map_land, map4x_land, map16x_land,
+                     dimension_terrains,  # tuple of (map_type, map4x_type, map16x_type) for dimension calculation
                      thumbnail_source_terrain, # tuple of (type, mag, shore) to generate thumbnail from
                      scale_factor):
         
@@ -446,27 +449,27 @@ class MapGenerator:
             with open(self.json_path, "r") as f:
                 input_manifest = json.load(f)
         
-        # Calculate dimensions from the thumbnail source (which is map4x)
-        # map width = map4x width * 2
-        h, w = t_type.shape
-        width = w * 2
-        height = h * 2
+        # Calculate dimensions directly from the terrain arrays
+        map_type, map4x_type, map16x_type = dimension_terrains
+        map_h, map_w = map_type.shape
+        map4x_h, map4x_w = map4x_type.shape
+        map16x_h, map16x_w = map16x_type.shape
         
         manifest = {
             "name": variant_name,
             "map": {
-                "width": width,
-                "height": height,
+                "width": map_w,
+                "height": map_h,
                 "num_land_tiles": map_land
             },
             "map4x": {
-                "width": width // 2,
-                "height": height // 2,
+                "width": map4x_w,
+                "height": map4x_h,
                 "num_land_tiles": map4x_land
             },
             "map16x": {
-                "width": width // 4,
-                "height": height // 4,
+                "width": map16x_w,
+                "height": map16x_h,
                 "num_land_tiles": map16x_land
             },
             "nations": []

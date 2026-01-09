@@ -1,0 +1,54 @@
+{
+  "image": {
+    "path": "Philippines.png",
+    "width_px": 4096,
+    "height_px": 2506,
+    "dpi": 300
+  },
+  "crs": "EPSG:3857",
+  "extent": {
+    "xmin": 10540905.2118,
+    "ymin": -1214790.9504,
+    "xmax": 14763554.5216,
+    "ymax": 1369632.7546
+  },
+  "origin": "top-left",
+  "points": [
+    {
+      "name": "Indonesia",
+      "flag": "id",
+      "pixel_x": 2012,
+      "pixel_y": 1317
+    },
+    {
+      "name": "Philippines",
+      "flag": "ph",
+      "pixel_x": 3297,
+      "pixel_y": 494
+    },
+    {
+      "name": "Vietnam",
+      "flag": "vn",
+      "pixel_x": 1184,
+      "pixel_y": 200
+    },
+    {
+      "name": "Malaysia",
+      "flag": "my",
+      "pixel_x": 802,
+      "pixel_y": 896
+    },
+    {
+      "name": "Thailand",
+      "flag": "th",
+      "pixel_x": 477,
+      "pixel_y": 359
+    },
+    {
+      "name": "Cambodia",
+      "flag": "kh",
+      "pixel_x": 1059,
+      "pixel_y": 99
+    }
+  ]
+}

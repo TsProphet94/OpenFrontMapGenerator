@@ -1,0 +1,17 @@
+{
+  "image": {
+    "path": "Palm Island.png",
+    "width_px": 4096,
+    "height_px": 2506,
+    "dpi": 300
+  },
+  "crs": "EPSG:3857",
+  "extent": {
+    "xmin": 6116728.457,
+    "ymin": 2872207.4412,
+    "xmax": 6132983.698,
+    "ymax": 2882156.2737
+  },
+  "origin": "top-left",
+  "points": []
+}
