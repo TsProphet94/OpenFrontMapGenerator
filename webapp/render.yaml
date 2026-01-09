@@ -1,0 +1,20 @@
+# Render deployment configuration
+services:
+  - type: web
+    name: openfront-map-generator
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: OPENTOPO_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: FLASK_SECRET_KEY
+        sync: false

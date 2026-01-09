@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenFront Map Generator</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            height: 100%;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0f172a;
+            color: #f1f5f9;
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid #334155;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .user-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .user-email {
+            color: #94a3b8;
+            font-size: 0.875rem;
+        }
+        
+        .btn {
+            padding: 0.625rem 1.25rem;
+            border-radius: 8px;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #334155;
+            color: #f1f5f9;
+        }
+        
+        .btn-secondary:hover {
+            background: #475569;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #475569;
+            color: #94a3b8;
+        }
+        
+        .btn-outline:hover {
+            border-color: #22c55e;
+            color: #22c55e;
+        }
+        
+        /* Main Layout */
+        .main-container {
+            display: flex;
+            height: calc(100vh - 73px);
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 380px;
+            background: #1e293b;
+            border-right: 1px solid #334155;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+        
+        .panel {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .panel-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #f1f5f9;
+            font-size: 0.875rem;
+            transition: border-color 0.2s;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #22c55e;
+        }
+        
+        .form-select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #f1f5f9;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+        
+        .form-select:focus {
+            outline: none;
+            border-color: #22c55e;
+        }
+        
+        .bounds-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+        
+        .bounds-value {
+            background: #1e293b;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-family: 'SF Mono', monospace;
+        }
+        
+        .bounds-label {
+            color: #64748b;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            margin-bottom: 0.25rem;
+        }
+        
+        .generate-btn {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1rem;
+            margin-top: 0.5rem;
+        }
+        
+        .generate-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        /* Map Area */
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .map-instructions {
+            position: absolute;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            z-index: 1000;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        
+        /* Auth Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        
+        .modal {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 2rem;
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+        
+        .modal-subtitle {
+            color: #94a3b8;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .modal .btn-primary {
+            width: 100%;
+            margin-top: 0.5rem;
+        }
+        
+        .auth-switch {
+            text-align: center;
+            margin-top: 1rem;
+            color: #94a3b8;
+            font-size: 0.875rem;
+        }
+        
+        .auth-switch a {
+            color: #22c55e;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        
+        .auth-switch a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Progress Overlay */
+        .progress-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+        }
+        
+        .progress-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 2.5rem;
+            text-align: center;
+            max-width: 400px;
+        }
+        
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid #334155;
+            border-top-color: #22c55e;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1.5rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .progress-text {
+            font-size: 1.125rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+        
+        .progress-subtext {
+            color: #94a3b8;
+            font-size: 0.875rem;
+        }
+        
+        /* Success Card */
+        .success-icon {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin: 0 auto 1rem;
+        }
+        
+        /* Error message */
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+        
+        /* Hide elements */
+        .hidden {
+            display: none !important;
+        }
+        
+        /* Leaflet custom styles */
+        .leaflet-draw-toolbar a {
+            background-color: #1e293b;
+            border-color: #334155;
+        }
+        
+        .leaflet-draw-toolbar a:hover {
+            background-color: #334155;
+        }
+    </style>
+</head>
+<body>
+    <!-- Auth Modal (hidden by default for dev mode) -->
+    <div id="authModal" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="logo-icon" style="margin: 0 auto 1rem;">🗺️</div>
+            <h2 class="modal-title">Welcome Back</h2>
+            <p class="modal-subtitle" id="authSubtitle">Sign in to generate terrain maps</p>
+            
+            <form id="authForm">
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" id="authEmail" class="form-input" placeholder="you@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" id="authPassword" class="form-input" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary" id="authSubmit">Sign In</button>
+            </form>
+            
+            <div class="auth-switch">
+                <span id="authSwitchText">Don't have an account?</span>
+                <a id="authSwitchLink" onclick="toggleAuthMode()">Sign Up</a>
+            </div>
+            
+            <div id="authError" class="error-message hidden"></div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal-overlay hidden">
+        <div class="modal">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 class="modal-title" style="margin: 0; text-align: left;">⚙️ Settings</h2>
+                <button onclick="closeSettings()" style="background: none; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            
+            <form id="settingsForm">
+                <div class="form-group">
+                    <label class="form-label">OpenTopography API Key <span style="color: #ef4444;">*</span></label>
+                    <input type="password" id="apiKeyInput" class="form-input" placeholder="Enter your API key">
+                    <p style="color: #64748b; font-size: 0.75rem; margin-top: 0.5rem;">
+                        Get a free API key at <a href="https://opentopography.org/" target="_blank" style="color: #22c55e;">opentopography.org</a>
+                    </p>
+                </div>
+                
+                <div id="settingsStatus" class="hidden" style="margin-bottom: 1rem;"></div>
+                
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Save Settings</button>
+            </form>
+            
+            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #334155;">
+                <p style="color: #64748b; font-size: 0.75rem;">Your API key is stored securely in your account and used only for map generation.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Overlay -->
+    <div id="progressOverlay" class="progress-overlay hidden">
+        <div class="progress-card" id="progressCard">
+            <div class="spinner"></div>
+            <p class="progress-text" id="progressText">Generating map...</p>
+            <p class="progress-subtext" id="progressSubtext">This may take 30-60 seconds</p>
+        </div>
+    </div>
+    
+    <!-- Main App -->
+    <div id="app">
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">🗺️</div>
+                <span class="logo-text">OpenFront Map Generator</span>
+            </div>
+            <div class="user-section">
+                <span class="user-email" id="userEmail"></span>
+                <button class="btn btn-secondary" onclick="showSettings()" title="Settings">⚙️ Settings</button>
+                <button class="btn btn-outline" onclick="signOut()">Sign Out</button>
+            </div>
+        </header>
+        
+        <div class="main-container">
+            <aside class="sidebar">
+                <div class="panel">
+                    <h3 class="panel-title">📍 Map Settings</h3>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Map Name <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="mapName" class="form-input" placeholder="Required - e.g., Cyprus, Western Europe" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Resolution (auto-calculated, max 3M pixels)</label>
+                        <div id="resolutionDisplay" class="bounds-value" style="text-align: center;">Select an area first</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">DEM Source</label>
+                        <select id="demSource" class="form-select">
+                            <option value="COP90" selected>Copernicus 90m (Recommended)</option>
+                            <option value="COP30">Copernicus 30m (High Detail)</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="panel">
+                    <h3 class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>📐 Selected Bounds</span>
+                        <button id="clearBoundsBtn" class="hidden" onclick="clearSelection()" style="background: #ef4444; border: none; color: white; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold;" title="Clear selection">✕</button>
+                    </h3>
+                    <p id="noBoundsText" style="color: #64748b; font-size: 0.875rem;">
+                        Draw a rectangle on the map to select an area
+                    </p>
+                    <div id="boundsDisplay" class="hidden">
+                        <div class="bounds-grid">
+                            <div>
+                                <div class="bounds-label">North</div>
+                                <div class="bounds-value" id="boundNorth">-</div>
+                            </div>
+                            <div>
+                                <div class="bounds-label">South</div>
+                                <div class="bounds-value" id="boundSouth">-</div>
+                            </div>
+                            <div>
+                                <div class="bounds-label">West</div>
+                                <div class="bounds-value" id="boundWest">-</div>
+                            </div>
+                            <div>
+                                <div class="bounds-label">East</div>
+                                <div class="bounds-value" id="boundEast">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary generate-btn" id="generateBtn" disabled onclick="generateMap()">
+                    🚀 Generate Map
+                </button>
+            </aside>
+            
+            <div class="map-container">
+                <div class="map-instructions">
+                    Use the rectangle tool on the left to draw your map area
+                </div>
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    
+    <script>
+        // Configuration
+        const CONFIG = {
+            API_URL: window.location.origin,
+            SUPABASE_URL: 'https://qvsvmalowainwanvrkhn.supabase.co',
+            SUPABASE_ANON_KEY: 'sb_publishable_Lqwf_Ak7fpdBPF4_lJu4iA_7JC68zZU'
+        };
+        
+        // State
+        let supabaseClient = null;
+        let currentUser = null;
+        let userApiKey = null;
+        let map = null;
+        let drawnItems = null;
+        let currentBounds = null;
+        let isSignUp = false;
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initSupabase();
+            initMap();
+            
+            // Add listener to map name input to validate
+            document.getElementById('mapName').addEventListener('input', updateGenerateButton);
+        });
+        
+        // Supabase Auth
+        function initSupabase() {
+            // Check if Supabase is configured
+            if (!CONFIG.SUPABASE_URL || CONFIG.SUPABASE_URL === '' || CONFIG.SUPABASE_URL.includes('your-project')) {
+                // Development mode - skip auth
+                console.log('Supabase not configured - running in dev mode');
+                showApp({ email: 'dev@localhost' });
+                return;
+            }
+            
+            supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+            
+            // Check existing session
+            supabaseClient.auth.getSession().then(({ data: { session } }) => {
+                if (session) {
+                    currentUser = session.user;
+                    showApp(session.user);
+                } else {
+                    showAuth();
+                }
+            });
+        }
+        
+        function showAuth() {
+            document.getElementById('authModal').classList.remove('hidden');
+            document.getElementById('app').classList.add('hidden');
+        }
+        
+        function showApp(user) {
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('app').classList.remove('hidden');
+            document.getElementById('userEmail').textContent = user.email;
+            currentUser = user;
+            
+            // Load user's API key from profile
+            loadUserApiKey();
+            
+            // Reinitialize map if needed
+            if (map) {
+                setTimeout(() => map.invalidateSize(), 100);
+            }
+        }
+        
+        // Settings / API Key Management
+        async function loadUserApiKey() {
+            if (!supabaseClient || !currentUser) {
+                // Dev mode - use local storage
+                userApiKey = localStorage.getItem('dev_api_key') || '';
+                return;
+            }
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('profiles')
+                    .select('api_key')
+                    .eq('id', currentUser.id)
+                    .single();
+                
+                if (!error && data) {
+                    userApiKey = data.api_key || '';
+                }
+            } catch (err) {
+                console.error('Failed to load API key:', err);
+            }
+        }
+        
+        function showSettings() {
+            document.getElementById('apiKeyInput').value = userApiKey || '';
+            document.getElementById('settingsStatus').classList.add('hidden');
+            document.getElementById('settingsModal').classList.remove('hidden');
+        }
+        
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.add('hidden');
+        }
+        
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const apiKey = document.getElementById('apiKeyInput').value.trim();
+            const statusEl = document.getElementById('settingsStatus');
+            
+            if (!supabaseClient || !currentUser) {
+                // Dev mode - save to local storage
+                localStorage.setItem('dev_api_key', apiKey);
+                userApiKey = apiKey;
+                showSettingsStatus('API key saved locally!', 'success');
+                setTimeout(closeSettings, 1500);
+                return;
+            }
+            
+            try {
+                const { error } = await supabaseClient
+                    .from('profiles')
+                    .update({ api_key: apiKey, updated_at: new Date().toISOString() })
+                    .eq('id', currentUser.id);
+                
+                if (error) throw error;
+                
+                userApiKey = apiKey;
+                showSettingsStatus('API key saved successfully!', 'success');
+                setTimeout(closeSettings, 1500);
+            } catch (err) {
+                showSettingsStatus('Failed to save: ' + err.message, 'error');
+            }
+        });
+        
+        function showSettingsStatus(message, type) {
+            const statusEl = document.getElementById('settingsStatus');
+            statusEl.textContent = message;
+            statusEl.className = type === 'success' 
+                ? 'error-message' 
+                : 'error-message';
+            statusEl.style.background = type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+            statusEl.style.borderColor = type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)';
+            statusEl.style.color = type === 'success' ? '#4ade80' : '#fca5a5';
+            statusEl.classList.remove('hidden');
+        }
+        
+        function toggleAuthMode() {
+            isSignUp = !isSignUp;
+            
+            if (isSignUp) {
+                document.getElementById('authSubmit').textContent = 'Sign Up';
+                document.getElementById('authSwitchText').textContent = 'Already have an account?';
+                document.getElementById('authSwitchLink').textContent = 'Sign In';
+                document.getElementById('authSubtitle').textContent = 'Create an account to get started';
+            } else {
+                document.getElementById('authSubmit').textContent = 'Sign In';
+                document.getElementById('authSwitchText').textContent = "Don't have an account?";
+                document.getElementById('authSwitchLink').textContent = 'Sign Up';
+                document.getElementById('authSubtitle').textContent = 'Sign in to generate terrain maps';
+            }
+            
+            document.getElementById('authError').classList.add('hidden');
+        }
+        
+        // Auth form submission
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('authEmail').value;
+            const password = document.getElementById('authPassword').value;
+            const errorEl = document.getElementById('authError');
+            
+            errorEl.classList.add('hidden');
+            
+            // Dev mode
+            if (!supabaseClient) {
+                showApp({ email });
+                return;
+            }
+            
+            try {
+                let result;
+                if (isSignUp) {
+                    result = await supabaseClient.auth.signUp({ email, password });
+                } else {
+                    result = await supabaseClient.auth.signInWithPassword({ email, password });
+                }
+                
+                if (result.error) {
+                    errorEl.textContent = result.error.message;
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+                
+                if (isSignUp) {
+                    errorEl.textContent = 'Check your email to confirm your account!';
+                    errorEl.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+                    errorEl.style.background = 'rgba(34, 197, 94, 0.1)';
+                    errorEl.style.color = '#4ade80';
+                    errorEl.classList.remove('hidden');
+                } else {
+                    showApp(result.data.user);
+                }
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.remove('hidden');
+            }
+        });
+        
+        async function signOut() {
+            if (supabaseClient) {
+                await supabaseClient.auth.signOut();
+            }
+            currentUser = null;
+            showAuth();
+        }
+        
+        // Map initialization
+        function initMap() {
+            map = L.map('map').setView([35.0, 33.0], 5);
+            
+            // Esri World Imagery (Satellite)
+            const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles © Esri'
+            });
+            
+            // Esri Labels overlay
+            const labels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+                attribution: ''
+            });
+            
+            // OpenStreetMap
+            const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            });
+            
+            // Add satellite + labels as default (hybrid style)
+            satellite.addTo(map);
+            labels.addTo(map);
+            
+            // Layer control
+            const baseMaps = {
+                "Satellite": satellite,
+                "Street Map": osm
+            };
+            const overlays = {
+                "Labels": labels
+            };
+            L.control.layers(baseMaps, overlays).addTo(map);
+            
+            // Initialize draw control
+            drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+            
+            const drawControl = new L.Control.Draw({
+                draw: {
+                    polyline: false,
+                    polygon: false,
+                    circle: false,
+                    marker: false,
+                    circlemarker: false,
+                    rectangle: {
+                        shapeOptions: {
+                            color: '#22c55e',
+                            weight: 2,
+                            fillOpacity: 0.2
+                        }
+                    }
+                },
+                edit: {
+                    featureGroup: drawnItems,
+                    remove: true
+                }
+            });
+            map.addControl(drawControl);
+            
+            // Handle draw events
+            map.on(L.Draw.Event.CREATED, (e) => {
+                drawnItems.clearLayers();
+                drawnItems.addLayer(e.layer);
+                updateBounds(e.layer.getBounds());
+            });
+            
+            map.on(L.Draw.Event.EDITED, (e) => {
+                e.layers.eachLayer((layer) => {
+                    updateBounds(layer.getBounds());
+                });
+            });
+            
+            map.on(L.Draw.Event.DELETED, () => {
+                currentBounds = null;
+                document.getElementById('noBoundsText').classList.remove('hidden');
+                document.getElementById('boundsDisplay').classList.add('hidden');
+                document.getElementById('clearBoundsBtn').classList.add('hidden');
+                updateGenerateButton();
+            });
+        }
+        
+        function updateBounds(bounds) {
+            currentBounds = {
+                south: bounds.getSouth(),
+                west: bounds.getWest(),
+                north: bounds.getNorth(),
+                east: bounds.getEast()
+            };
+            
+            document.getElementById('boundNorth').textContent = currentBounds.north.toFixed(4);
+            document.getElementById('boundSouth').textContent = currentBounds.south.toFixed(4);
+            document.getElementById('boundWest').textContent = currentBounds.west.toFixed(4);
+            document.getElementById('boundEast').textContent = currentBounds.east.toFixed(4);
+            
+            // Calculate resolution (max 3M pixels)
+            const resolution = calculateResolution(currentBounds);
+            document.getElementById('resolutionDisplay').textContent = `${resolution.width} × ${resolution.height} px`;
+            
+            document.getElementById('noBoundsText').classList.add('hidden');
+            document.getElementById('boundsDisplay').classList.remove('hidden');
+            document.getElementById('clearBoundsBtn').classList.remove('hidden');
+            updateGenerateButton();
+        }
+        
+        function updateGenerateButton() {
+            const hasName = document.getElementById('mapName').value.trim().length > 0;
+            const hasBounds = currentBounds !== null;
+            document.getElementById('generateBtn').disabled = !(hasName && hasBounds);
+        }
+        
+        function calculateResolution(bounds) {
+            const MAX_PIXELS = 3000000; // 3 million pixels
+            
+            // Calculate aspect ratio with latitude correction
+            const centerLat = (bounds.north + bounds.south) / 2;
+            const latCorrection = Math.cos(centerLat * Math.PI / 180);
+            
+            const correctedWidth = (bounds.east - bounds.west) * latCorrection;
+            const heightDegrees = bounds.north - bounds.south;
+            const aspect = correctedWidth / Math.max(0.0001, heightDegrees);
+            
+            // Calculate dimensions that fit within MAX_PIXELS
+            // width * height = MAX_PIXELS
+            // width / height = aspect
+            // So: width = sqrt(MAX_PIXELS * aspect), height = sqrt(MAX_PIXELS / aspect)
+            let width = Math.sqrt(MAX_PIXELS * aspect);
+            let height = Math.sqrt(MAX_PIXELS / aspect);
+            
+            // Round to even numbers (required for downscaling)
+            width = Math.floor(width / 2) * 2;
+            height = Math.floor(height / 2) * 2;
+            
+            return { width, height };
+        }
+        
+        function clearSelection() {
+            drawnItems.clearLayers();
+            currentBounds = null;
+            document.getElementById('noBoundsText').classList.remove('hidden');
+            document.getElementById('boundsDisplay').classList.add('hidden');
+            document.getElementById('clearBoundsBtn').classList.add('hidden');
+            document.getElementById('resolutionDisplay').textContent = 'Select an area first';
+            updateGenerateButton();
+        }
+        
+        // Generate map
+        async function generateMap() {
+            if (!currentBounds) {
+                alert('Please draw a rectangle on the map first');
+                return;
+            }
+            
+            const name = document.getElementById('mapName').value.trim();
+            if (!name) {
+                alert('Please enter a map name');
+                return;
+            }
+            
+            // Check for API key
+            if (!userApiKey) {
+                alert('Please set your OpenTopography API key in Settings first');
+                showSettings();
+                return;
+            }
+            
+            const demSource = document.getElementById('demSource').value;
+            
+            // Show progress
+            showProgress('Generating map...', 'This may take 30-60 seconds');
+            
+            try {
+                // Get auth token
+                let token = 'dev-token';
+                if (supabaseClient) {
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    if (session) {
+                        token = session.access_token;
+                    }
+                }
+                
+                const response = await fetch(`${CONFIG.API_URL}/api/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        bounds: currentBounds,
+                        dem_source: demSource,
+                        api_key: userApiKey
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to generate map');
+                }
+                
+                // Show success
+                showSuccess(data);
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        
+        function showProgress(text, subtext) {
+            document.getElementById('progressText').textContent = text;
+            document.getElementById('progressSubtext').textContent = subtext;
+            document.getElementById('progressCard').innerHTML = `
+                <div class="spinner"></div>
+                <p class="progress-text">${text}</p>
+                <p class="progress-subtext">${subtext}</p>
+            `;
+            document.getElementById('progressOverlay').classList.remove('hidden');
+        }
+        
+        function showSuccess(data) {
+            document.getElementById('progressCard').innerHTML = `
+                <div class="success-icon">✓</div>
+                <p class="progress-text">Map Generated!</p>
+                <p class="progress-subtext" style="margin-bottom: 1.5rem;">Your terrain map is ready to download</p>
+                <a href="${CONFIG.API_URL}${data.download_url}" class="btn btn-primary" style="display: inline-block; text-decoration: none;">
+                    📥 Download ZIP
+                </a>
+                <button class="btn btn-secondary" style="margin-left: 0.5rem;" onclick="closeProgress()">
+                    Close
+                </button>
+            `;
+        }
+        
+        function showError(message) {
+            document.getElementById('progressCard').innerHTML = `
+                <div class="success-icon" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">✕</div>
+                <p class="progress-text">Generation Failed</p>
+                <p class="progress-subtext" style="margin-bottom: 1.5rem; color: #fca5a5;">${message}</p>
+                <button class="btn btn-secondary" onclick="closeProgress()">
+                    Close
+                </button>
+            `;
+        }
+        
+        function closeProgress() {
+            document.getElementById('progressOverlay').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
