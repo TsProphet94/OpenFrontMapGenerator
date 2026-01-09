@@ -144,11 +144,9 @@ class MapProcessor:
             styled_image, south, west, north, east, width_px, height_px
         )
         
-        # Step 5: Get province/country points
-        print("Finding provinces...")
-        points = self._get_province_points(
-            south, west, north, east, width_px, height_px, max_provinces=20
-        )
+        # Step 5: Get province/country points (deactivated for low-memory testing)
+        print("[Skipping province/country points for testing]")
+        points = []
         
         # Step 6: Save outputs
         print("Saving outputs...")
