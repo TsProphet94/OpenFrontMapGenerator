@@ -117,14 +117,13 @@ class MapProcessor:
         # width * height = max_pixels
         # width / height = aspect
         # So: width = sqrt(max_pixels * aspect), height = sqrt(max_pixels / aspect)
-        width_px = int(math.sqrt(max_pixels * aspect))
-        height_px = int(math.sqrt(max_pixels / aspect))
         
         # Round to even numbers (required for downscaling)
-        width_px = (width_px // 2) * 2
-        height_px = (height_px // 2) * 2
+        width_px = data.get('width_px')
+        height_px = data.get('height_px')
         
         print(f"Output size: {width_px} x {height_px} px (aspect: {aspect:.3f}, total: {width_px * height_px:,} px)")
+        print(f"Output size: {width_px} x {height_px} px (total: {width_px * height_px:,} px)")
         
         # Step 1: Download DEM
         print("Downloading DEM...")
