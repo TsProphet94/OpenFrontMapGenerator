@@ -675,8 +675,8 @@ class MapProcessor:
         manifest = {
             "name": base_name,
             "map": {
-                "width": l1_w,
-                "height": l1_h,
+                "width": width,
+                "height": height,
                 "num_land_tiles": l1_land
             },
             "map4x": {
