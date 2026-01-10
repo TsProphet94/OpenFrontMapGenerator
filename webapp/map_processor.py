@@ -83,14 +83,13 @@ class MapProcessor:
         os.makedirs(output_dir, exist_ok=True)
     
     def generate(self, name: str, south: float, west: float, north: float, east: float,
-                 max_pixels: int = 3000000, dem_source: str = 'COP90') -> dict:
+                 width_px: int, height_px: int, dem_source: str = 'COP90') -> dict:
         """
         Generate a styled terrain map.
         
         Args:
             name: Map name
             south, west, north, east: Bounding box in WGS84
-            max_pixels: Maximum total pixels (default 3 million)
             dem_source: DEM source ('COP30', 'COP90', 'SRTM15+')
         
         Returns:
@@ -99,30 +98,6 @@ class MapProcessor:
         print(f"Generating map: {name}")
         print(f"Bounds: S={south}, W={west}, N={north}, E={east}")
         print(f"DEM Source: {dem_source}")
-        
-        # Calculate dimensions with proper aspect ratio accounting for latitude
-        # At the equator, 1 degree lat ≈ 1 degree lon in distance
-        # At higher latitudes, longitude degrees are shorter by cos(latitude)
-        center_lat = (north + south) / 2
-        lat_correction = math.cos(math.radians(center_lat))
-        
-        # Width in "corrected" degrees (accounts for projection)
-        corrected_width = (east - west) * lat_correction
-        height_degrees = north - south
-        
-        # Aspect ratio based on actual ground distances
-        aspect = corrected_width / max(0.0001, height_degrees)
-        
-        # Calculate dimensions that fit within max_pixels
-        # width * height = max_pixels
-        # width / height = aspect
-        # So: width = sqrt(max_pixels * aspect), height = sqrt(max_pixels / aspect)
-        
-        # Round to even numbers (required for downscaling)
-        width_px = data.get('width_px')
-        height_px = data.get('height_px')
-        
-        print(f"Output size: {width_px} x {height_px} px (aspect: {aspect:.3f}, total: {width_px * height_px:,} px)")
         print(f"Output size: {width_px} x {height_px} px (total: {width_px * height_px:,} px)")
         
         # Step 1: Download DEM

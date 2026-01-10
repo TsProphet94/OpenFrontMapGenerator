@@ -103,6 +103,8 @@ def generate_map():
         name = data.get('name', f'map_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
         bounds = data.get('bounds')
         dem_source = data.get('dem_source', 'COP90')
+        width_px = data.get('width_px')
+        height_px = data.get('height_px')
         
         if not bounds:
             return jsonify({'error': 'Bounds are required'}), 400
@@ -141,6 +143,8 @@ def generate_map():
             west=west,
             north=north,
             east=east,
+            width_px=width_px,
+            height_px=height_px,
             dem_source=dem_source
         )
         

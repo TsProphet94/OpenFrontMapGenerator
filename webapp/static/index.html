@@ -951,7 +951,10 @@
                         token = session.access_token;
                     }
                 }
-                
+
+                // Calculate resolution for this request
+                const resolution = calculateResolution(currentBounds);
+
                 const response = await fetch(`${CONFIG.API_URL}/api/generate`, {
                     method: 'POST',
                     headers: {
@@ -962,19 +965,21 @@
                         name: name,
                         bounds: currentBounds,
                         dem_source: demSource,
-                        api_key: userApiKey
+                        api_key: userApiKey,
+                        width_px: resolution.width,
+                        height_px: resolution.height
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (!response.ok) {
                     throw new Error(data.error || 'Failed to generate map');
                 }
-                
+
                 // Show success
                 showSuccess(data);
-                
+
             } catch (error) {
                 showError(error.message);
             }
